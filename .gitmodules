@@ -1,0 +1,3 @@
+[submodule "provekit"]
+	path = provekit
+	url = https://github.com/worldfnd/provekit.git

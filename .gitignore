@@ -1,0 +1,5 @@
+artifacts/keys/
+contracts/src/Verifier.sol
+contracts/out/
+contracts/cache/
+/export
