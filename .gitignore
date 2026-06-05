@@ -1,5 +1,8 @@
-artifacts/keys/
+/export
+artifacts/calldata/
 contracts/src/Verifier.sol
 contracts/out/
 contracts/cache/
-/export
+provekit/noir-examples/basic/basic.pkp
+provekit/noir-examples/basic/basic.pkv
+provekit/noir-examples/basic/proof.np

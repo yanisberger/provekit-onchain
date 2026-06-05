@@ -1,40 +1,58 @@
-.PHONY: all keys solidity foundry-test clean
+.PHONY: all prepare prove solidity calldata foundry-test clean
 
-PROVEKIT_CLI := go run ./provekit/recursive-verifier/cmd/cli
-GNARK_PARAMS := provekit/gnark_params.json
-GNARK_R1CS   := provekit/gnark_r1cs.json
-KEYS_DIR     := artifacts/keys
-VK_FILE      := $(KEYS_DIR)/vk.bin
-PK_FILE      := $(KEYS_DIR)/pk.bin
-VERIFIER_SOL := contracts/src/Verifier.sol
+CIRCUIT_DIR    := provekit/noir-examples/basic
+CLI            := provekit/target/release/provekit-cli
+TEMPLATE       := provekit/provekit/groth16/contracts/ProvekitGroth16Verifier.sol
+PKP_FILE       := $(CIRCUIT_DIR)/basic.pkp
+PKV_FILE       := $(CIRCUIT_DIR)/basic.pkv
+PROOF_FILE     := $(CIRCUIT_DIR)/proof.np
+VERIFIER_SOL   := contracts/src/Verifier.sol
+CALLDATA_DIR   := artifacts/calldata
+PROOF_HEX      := $(CALLDATA_DIR)/proof.hex
+INPUTS_TXT     := $(CALLDATA_DIR)/inputs.txt
 
 all: solidity
 
-# Step 1: Run gnark recursive verifier to generate PK/VK.
-# Uses the pre-existing gnark_params.json + gnark_r1cs.json from the provekit submodule.
-# The CLI saves keys with timestamped filenames under --saveKeys; we rename to canonical paths.
-$(VK_FILE): $(GNARK_PARAMS) $(GNARK_R1CS)
-	rm -rf $(KEYS_DIR)
-	mkdir -p $(KEYS_DIR)
-	cd provekit/recursive-verifier && go run ./cmd/cli \
-		--config ../../$(GNARK_PARAMS) \
-		--r1cs ../../$(GNARK_R1CS) \
-		--saveKeys ../../$(KEYS_DIR)
-	mv $(KEYS_DIR)/pk_*.bin $(PK_FILE)
-	mv $(KEYS_DIR)/vk_*.bin $(VK_FILE)
+# Build the provekit-cli binary (only when sources change).
+$(CLI): provekit/Cargo.toml
+	cd provekit && cargo build --release --bin provekit-cli
 
-keys: $(VK_FILE)
+# Step 1: Compile Noir circuit + run Groth16 trusted setup.
+$(PKV_FILE): $(CLI) $(CIRCUIT_DIR)/src/main.nr $(CIRCUIT_DIR)/Nargo.toml
+	cd $(CIRCUIT_DIR) && ../../target/release/provekit-cli prepare . --backend groth16
 
-# Step 2: Export Solidity verifier contract from the VK.
-$(VERIFIER_SOL): $(VK_FILE)
+prepare: $(PKV_FILE)
+
+# Step 2: Generate a Groth16 proof from Prover.toml inputs.
+$(PROOF_FILE): $(CLI) $(PKV_FILE) $(CIRCUIT_DIR)/Prover.toml
+	cd $(CIRCUIT_DIR) && ../../target/release/provekit-cli prove
+
+prove: $(PROOF_FILE)
+
+# Step 3: Emit a circuit-specific Solidity verifier from the VK.
+$(VERIFIER_SOL): $(CLI) $(PKV_FILE) $(TEMPLATE)
 	mkdir -p contracts/src
-	go run ./cmd/export --vk $(VK_FILE) --out $(VERIFIER_SOL)
+	provekit/target/release/provekit-cli export-solidity \
+		--pkv $(PKV_FILE) \
+		--template $(TEMPLATE) \
+		--out $(VERIFIER_SOL)
 
 solidity: $(VERIFIER_SOL)
 
-# Step 3: Run Foundry tests against the exported Solidity verifier.
-foundry-test: $(VERIFIER_SOL)
+# Step 4: Export EVM calldata (proof.hex + inputs.txt) for Foundry tests.
+$(PROOF_HEX): $(CLI) $(PROOF_FILE)
+	mkdir -p $(CALLDATA_DIR)
+	provekit/target/release/provekit-cli export-evm-proof \
+		--proof $(PROOF_FILE) \
+		--out-dir $(CALLDATA_DIR)
+
+calldata: $(PROOF_HEX)
+
+# Step 5: Run Foundry tests against the generated verifier.
+foundry-test: $(VERIFIER_SOL) $(PROOF_HEX)
 	cd contracts && forge test -vvv
 
 clean:
-	rm -rf artifacts/keys contracts/src/Verifier.sol contracts/out contracts/cache
+	rm -rf $(PKP_FILE) $(PKV_FILE) $(PROOF_FILE) \
+	       contracts/src/Verifier.sol contracts/out contracts/cache \
+	       $(CALLDATA_DIR)
