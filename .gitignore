@@ -1,8 +1,7 @@
-/export
 artifacts/calldata/
 contracts/src/Verifier.sol
 contracts/out/
 contracts/cache/
-provekit/noir-examples/basic/basic.pkp
-provekit/noir-examples/basic/basic.pkv
-provekit/noir-examples/basic/proof.np
+circuit/circuit.pkp
+circuit/circuit.pkv
+circuit/proof.np

@@ -1,10 +1,10 @@
 .PHONY: all prepare prove solidity calldata foundry-test clean
 
-CIRCUIT_DIR    := provekit/noir-examples/basic
+CIRCUIT_DIR    := circuit
 CLI            := provekit/target/release/provekit-cli
 TEMPLATE       := provekit/provekit/groth16/contracts/ProvekitGroth16Verifier.sol
-PKP_FILE       := $(CIRCUIT_DIR)/basic.pkp
-PKV_FILE       := $(CIRCUIT_DIR)/basic.pkv
+PKP_FILE       := $(CIRCUIT_DIR)/circuit.pkp
+PKV_FILE       := $(CIRCUIT_DIR)/circuit.pkv
 PROOF_FILE     := $(CIRCUIT_DIR)/proof.np
 VERIFIER_SOL   := contracts/src/Verifier.sol
 CALLDATA_DIR   := artifacts/calldata
@@ -17,15 +17,21 @@ all: solidity
 $(CLI): provekit/Cargo.toml
 	cd provekit && cargo build --release --bin provekit-cli
 
-# Step 1: Compile Noir circuit + run Groth16 trusted setup.
-$(PKV_FILE): $(CLI) $(CIRCUIT_DIR)/src/main.nr $(CIRCUIT_DIR)/Nargo.toml
-	cd $(CIRCUIT_DIR) && ../../target/release/provekit-cli prepare . --backend groth16
+# Step 0: Compile the Noir circuit (run nargo build in circuit/).
+$(CIRCUIT_DIR)/target/circuit.json: $(CIRCUIT_DIR)/src/main.nr $(CIRCUIT_DIR)/Nargo.toml
+	cd $(CIRCUIT_DIR) && nargo build
+
+build: $(CIRCUIT_DIR)/target/circuit.json
+
+# Step 1: Compile R1CS + run Groth16 trusted setup.
+$(PKV_FILE): $(CLI) $(CIRCUIT_DIR)/target/circuit.json
+	cd $(CIRCUIT_DIR) && ../provekit/target/release/provekit-cli prepare target/circuit.json --backend groth16
 
 prepare: $(PKV_FILE)
 
 # Step 2: Generate a Groth16 proof from Prover.toml inputs.
 $(PROOF_FILE): $(CLI) $(PKV_FILE) $(CIRCUIT_DIR)/Prover.toml
-	cd $(CIRCUIT_DIR) && ../../target/release/provekit-cli prove
+	cd $(CIRCUIT_DIR) && ../provekit/target/release/provekit-cli prove
 
 prove: $(PROOF_FILE)
 

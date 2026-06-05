@@ -4,3 +4,4 @@ out = "out"
 libs = ["lib"]
 test = "test"
 remappings = ["forge-std/=lib/forge-std/src/"]
+fs_permissions = [{ access = "read", path = "../artifacts/calldata" }]
